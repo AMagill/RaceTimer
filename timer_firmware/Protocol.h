@@ -13,7 +13,7 @@ typedef struct __attribute__((packed)) {
 
 
 void pcFrameReceived(uint8_t *frame, uint32_t size);
-
+void pcSendSyncRequest(uint16_t addr);
 
 
 #endif /* PROTOCOL_H_ */

@@ -23,7 +23,7 @@ void pcFrameReceived(uint8_t *frame, uint32_t size)
 			reply.type = 'S';
 			reply.time0 = msg->time0;
 			reply.time1 = timeNow();
-			xbSendFrameTx16(source, false, (uint8_t*)&reply, sizeof(reply));
+			xbSendFrameTx16(source, XB_OPT_NO_ACK, (uint8_t*)&reply, sizeof(reply));
 			break;
 		}
 		case 'S':	// Sync reply
@@ -31,7 +31,7 @@ void pcFrameReceived(uint8_t *frame, uint32_t size)
 			if (size - 5 < sizeof(syncReplyMsg)) break;
 			syncReplyMsg *msg = (syncReplyMsg*)(&frame[5]);
 			uint32_t time2 = timeNow();
-			int64_t theta_fp = msg->time1 - ((int64_t)msg->time0 + time2)/2;
+			int64_t theta_fp = msg->time1 - ((int64_t)msg->time0 + time2-135)/2;
 			double theta = (double)theta_fp / (1<<16);
 			timeSync(theta);
 			break;
@@ -49,3 +49,12 @@ void pcFrameReceived(uint8_t *frame, uint32_t size)
 	SysCtlDelay(SysCtlClockGet() / (1000 * 3));
 	GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_2, 0);
 }
+
+void pcSendSyncRequest(uint16_t addr)
+{
+	syncRequestMsg msg;
+	msg.type = 's';
+	msg.time0 = timeNow();
+	xbSendFrameTx16(addr, XB_OPT_NO_ACK, (uint8_t*)&msg, sizeof(msg));
+}
+

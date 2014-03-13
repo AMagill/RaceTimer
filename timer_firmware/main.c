@@ -6,6 +6,7 @@
 #include "Time.h"
 #include "XBee.h"
 #include "Protocol.h"
+#include "BufferedUART.h"
 
 void gpioInit()
 {
@@ -32,11 +33,16 @@ uint8_t gpioGetButtons()
 	return ROM_GPIOPinRead(GPIO_PORTF_BASE, GPIO_PIN_0 | GPIO_PIN_4);
 }
 
+void tick(uint32_t seconds)
+{
+	gpioBlinkLEDs((seconds&0x07)<<1);
+	if (!(seconds & 0x0F))
+		timeUnsync();
+	pcSendSyncRequest(0xFFFF);
+}
+
 int main(void)
 {
-    // Set the clocking to run directly from the crystal.
-    //ROM_SysCtlClockSet(SYSCTL_SYSDIV_1 | SYSCTL_USE_OSC | SYSCTL_OSC_MAIN | SYSCTL_XTAL_16MHZ);
-
     // Set the system clock to run at 50MHz from the PLL.
     ROM_SysCtlClockSet(SYSCTL_SYSDIV_4 | SYSCTL_USE_PLL | SYSCTL_OSC_MAIN | SYSCTL_XTAL_16MHZ);
     ROM_FPULazyStackingEnable();
@@ -44,8 +50,10 @@ int main(void)
     // Configure devices
     gpioInit();		// GPIO (buttons & LEDs)
 	timeInit();		// Timer
+	timeSetTickCB(tick);
     xbInit();		// XBee connection (and UART)
     xbSetFrameCB(pcFrameReceived);
+    uartInit();
 
     // Enable processor interrupts.
     ROM_IntMasterEnable();
@@ -55,11 +63,15 @@ int main(void)
     	uint8_t btns = gpioGetButtons();
     	if (!(btns & BTN_1))
     	{
-    		syncRequestMsg msg;
-    		msg.type = 's';
-    		msg.time0 = timeNow();
-    		xbSendFrameTx16(0xFFFF, false, (uint8_t*)&msg, sizeof(msg));
+    		ROM_TimerDisable(TIMER0_BASE, TIMER_A);
     		SysCtlDelay(SysCtlClockGet() / (10 * 3));
+    		GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_1 | GPIO_PIN_2 | GPIO_PIN_3, LED_R);
+    		while (!(gpioGetButtons() & BTN_1));
+    		ROM_TimerEnable(TIMER0_BASE, TIMER_A);
+    		GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_1 | GPIO_PIN_2 | GPIO_PIN_3, 0);
+    		timeUnsync();
+    		//gpioBlinkLEDs(LED_B);
+    		//SysCtlDelay(SysCtlClockGet() / (10 * 3));
     	}
     }
 }

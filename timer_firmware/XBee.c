@@ -1,22 +1,13 @@
-#include <stdlib.h>
-#include <stdint.h>
-#include <stdbool.h>
+#include "main.h"
 #include "XBee.h"
 #include "RingBuffer.h"
-#include "inc/hw_memmap.h"
-#include "inc/hw_ints.h"
-#include "driverlib/rom.h"
-#include "driverlib/sysctl.h"
-#include "driverlib/gpio.h"
-#include "driverlib/pin_map.h"
-#include "driverlib/uart.h"
-#include "driverlib/interrupt.h"
 
 #define BUF_SIZE 256
 static uint8_t rxBuf[BUF_SIZE];
 static RingBuffer *txBuf;
 static FrameCallback frameCB = NULL;
 
+// Uses UART1: Rx PB0 + Tx PB1
 void xbInit()
 {
 	// Init variables
@@ -116,7 +107,7 @@ void xbUARTSend(const uint8_t *buffer, uint32_t count)
     }
 }
 
-void xbSendFrameTx16(uint16_t address, bool ack, const uint8_t *msg, uint16_t length)
+void xbSendFrameTx16(uint16_t address, uint8_t opts, const uint8_t *msg, uint16_t length)
 {
 	uint8_t frame[8];
 	frame[0] = 0x7E;				// Start delimiter
@@ -126,7 +117,7 @@ void xbSendFrameTx16(uint16_t address, bool ack, const uint8_t *msg, uint16_t le
 	frame[4] = 0x01;				// Frame ID
 	frame[5] = address >> 8;		// Address MSB
 	frame[6] = address & 0xFF;		// Address LSB
-	frame[7] = ack ? 0x01 : 0x00;	// Options
+	frame[7] = opts;				// Options
 
 	// Checksum
 	int i;
