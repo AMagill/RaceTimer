@@ -2,12 +2,37 @@
 <html>
 <head>
 	<meta charset="utf-8" />
+	<meta content='width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0' name='viewport' />
 	<title>Demo</title>
 	<style>
-		#time     { font-size: 10em; }
-		.goodRow  { background-color:#afa; }
-		.warnRow  { background-color:#ff8; }
-		.errorRow { background-color:#f88; }
+		body, html 	{ height: 100%; margin: 0px auto; padding: 0; }
+		#bigBox    	{
+			position: relative; 
+			height: 100%; 
+			width: 100%; 
+			background-color:#ddd; 
+			text-align: center;
+			display: table;
+			margin-bottom: 40px;
+		}
+		#timeText 	{
+			display: table-cell;
+			font-size: 22vw;
+			vertical-align: middle; 
+			text-align: center; 	
+		}
+		#readyText  {
+			font-size: 2em;
+			position: absolute;
+			width: 100%;
+			bottom: 0px;
+			left: 0px;
+		}
+		table { margin: 0 auto;}
+		#controls   { text-align: center;    }
+		.good	  	{ background-color:#afa; }
+		.warn	  	{ background-color:#ff8; }
+		.error	 	{ background-color:#f88; }
 	</style>
 </head>
 <body>
@@ -22,18 +47,41 @@
  		{
 			serverSocket.send("{\"command\":\""+command+"\"}");
 		}
+		function formatTimeMSF(totalTime)
+		{
+			var min = Math.floor(totalTime / 60)
+			var sec = totalTime - min*60;
+			var text = (min<10?'0':'') + min + ':' +
+			           (sec<10?'0':'') + sec.toFixed(2);
+			return text;
+		}
+		function formatTimeFuzzy(totalTime)
+		{
+			if (totalTime < 1.1)
+				return '<1 s';
+			if (totalTime < 60)
+				return Math.floor(totalTime) + ' s';
+			if (totalTime < 3600)
+				return Math.floor(totalTime/60) + ' m';
+			return Math.floor(totalTime/3600) + ' h';
+		}
 		function updateDisplay()
 		{
-			totalTime = running ? (time + (new Date().getTime() - lastUpdate)/1000) : time;
-			document.getElementById("time").innerHTML = totalTime.toFixed(2);
+			var totalTime = running ? (time + (new Date().getTime() - lastUpdate)/1000) : time;
+			document.getElementById("timeText").innerHTML = formatTimeMSF(totalTime);
 		}
 		var serverSocket = new WebSocket("ws://"+window.location.host+"/ws");
 		serverSocket.onopen  = function(evt) { 
-			document.getElementById("state").innerHTML = "Connected to server.";
+			var state = document.getElementById("state");
+			state.innerHTML = "Connected to server.";
+			state.className = "good";
 			sendCommand('refresh'); 
 		};
 		serverSocket.onclose = function(evt) { 
-			document.getElementById("state").innerHTML = "Disconnected from server.";
+			var state = document.getElementById("state");
+			state.innerHTML = "Lost connection to server.";
+			state.className = "error";
+
 		};
 		serverSocket.onmessage = function(evt) { 
 			var data	= JSON.parse(evt.data);
@@ -44,7 +92,7 @@
 				time		= data['time'];
 				lastUpdate  = new Date().getTime();
 				if (running && clockInterval == null)
-					clockInterval = window.setInterval(updateDisplay, 31);
+					clockInterval = window.setInterval(updateDisplay, 37);
 				else if (!running && clockInterval != null)
 				{
 					window.clearInterval(clockInterval);
@@ -108,33 +156,48 @@
 				{
 					td.innerHTML = "Last seen " + lastHeard.toFixed(0) + "s ago."
 					if (lastHeard < 5)
-						td.className = "warnRow";
+						td.className = "warn";
 					else
-						td.className = "errorRow";
+						td.className = "error";
 				}
 				else if (devSync > 0.01)
 				{
 					td.innerHTML = "Poor sync: " + (devSync<0?'':'+') +
 						devSync.toFixed(0) + "s";
-					td.className = "errorRow";
+					td.className = "error";
 				}
 				else
 				{
 					td.innerHTML = "Working."
-					td.className = "goodRow";
+					td.className = "good";
 					td.title = 'Last seen ' + lastHeard.toFixed(1) + ' s ago.' +
 						'  Sync ' + devSync.toFixed(4) + " s."
 				}
 			});
 		}
+		function resizeTimer()
+		{
+			//var wScale = 
+		}
 		setInterval(updateDevices, 1000);
+		window.onresize = function(event)
+		{
+			// HACK: Force the div to repaint and reevaluate its vw scale.
+			document.getElementById('timeText').style.zIndex="1";
+		}
 	</script>
 
-	<h1 id="time">00:00.00</h1>
-	<div id="state">Not connected to server.</div>
-	<button onclick="sendCommand('start')">Start</button>
-	<button onclick="sendCommand('stop')">Stop</button>
-	<button onclick="sendCommand('reset')">Reset</button>
-	<table><tbody id="devices"></tbody></table>
+	<div id="bigBox">
+		<span id="timeText">00:00.00</span>
+		<div id="readyText">Waiting</div>
+	</div>
+	<div id="controls">
+		<button onclick="sendCommand('start')">Start</button>
+		<button onclick="sendCommand('stop')">Stop</button>
+		<button onclick="sendCommand('reset')">Reset</button>
+		<br/>
+		<span id="state">Not connected to server.</span>
+		<table><tbody id="devices"></tbody></table>
+	</div>
 </body>
 </html>
