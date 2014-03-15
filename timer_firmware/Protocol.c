@@ -1,60 +1,58 @@
 #include "main.h"
 #include "XBee.h"
-#include "Time.h"
+#include "Timer.h"
 #include "Protocol.h"
+
+uint32_t lastHeartbeat = 0, lastTimeError = INT32_MAX;
 
 void pcFrameReceived(uint8_t *frame, uint32_t size)
 {
 	switch (frame[0])	// Switch by frame type
 	{
-	case 0x81:	// RX with 16-bit address
+	case 0x80:	// RX with 64-bit address
 	{
-		uint16_t source  = (frame[1] << 8) | frame[2];
-		//uint8_t  rssi    = frame[3];
-		//uint8_t  options = frame[4];
+		//uint64_t source  = (frame[1] << 56) | (frame[2] << 48) | (frame[3] << 40) | (frame[4] << 32) |
+		//		           (frame[5] << 24) | (frame[6] << 16) | (frame[7] <<  8) |  frame[8];
+		//uint8_t  rssi    = frame[9];
+		//uint8_t  options = frame[10];
+		const uint8_t *body = (void*)&frame[11];
 
-		switch (frame[5])
+		switch (body[0])
 		{
-		case 's':	// Sync request
+		case 'S':	// Heartbeat
 		{
-			if (size - 5 < sizeof(syncRequestMsg)) break;
-			syncRequestMsg *msg = (syncRequestMsg*)(&frame[5]);
-			syncReplyMsg reply;
-			reply.type = 'S';
-			reply.time0 = msg->time0;
-			reply.time1 = timeNow();
-			xbSendFrameTx16(source, XB_OPT_NO_ACK, (uint8_t*)&reply, sizeof(reply));
-			break;
-		}
-		case 'S':	// Sync reply
-		{
-			if (size - 5 < sizeof(syncReplyMsg)) break;
-			syncReplyMsg *msg = (syncReplyMsg*)(&frame[5]);
-			uint32_t time2 = timeNow();
-			int64_t theta_fp = msg->time1 - ((int64_t)msg->time0 + time2-135)/2;
-			double theta = (double)theta_fp / (1<<16);
-			timeSync(theta);
+			if (size - 5 < sizeof(heartbeatMsg)) break;
+			heartbeatMsg *msg = (heartbeatMsg*)body;
+			uint32_t now = timerNow(rtc);
+			int64_t delta = msg->time - now;
+			//if (!(rtc->count & 0x0F))
+				timerAdjust(rtc, delta);
+			lastTimeError = delta;
+			lastHeartbeat = timerNow(rtc);
 			break;
 		}
 		default:	// Unknown incoming packet
 			break;
 		}
+
+		GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_2, GPIO_PIN_2);
+		SysCtlDelay(SysCtlClockGet() / (1000 * 3));
+		GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_2, 0);
+
 		break;
 	}
 	default:
 		break;
 	}
-
-	GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_2, GPIO_PIN_2);
-	SysCtlDelay(SysCtlClockGet() / (1000 * 3));
-	GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_2, 0);
 }
 
-void pcSendSyncRequest(uint16_t addr)
+void pcSendUpdate(uint16_t addr, uint32_t timeDown, uint32_t timeUp)
 {
-	syncRequestMsg msg;
-	msg.type = 's';
-	msg.time0 = timeNow();
-	xbSendFrameTx16(addr, XB_OPT_NO_ACK, (uint8_t*)&msg, sizeof(msg));
+	updateMsg msg;
+	msg.type     = 'u';
+	msg.timeErr  = lastTimeError;
+	msg.timeDown = timeDown;
+	msg.timeUp   = timeUp;
+	xbSendFrameTx16(addr, XB_OPT_NONE, (uint8_t*)&msg, sizeof(msg));
 }
 

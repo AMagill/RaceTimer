@@ -8,10 +8,11 @@ static RingBuffer *txBuf;
 static FrameCallback frameCB = NULL;
 
 // Uses UART1: Rx PB0 + Tx PB1
-void xbInit()
+void xbInit(FrameCallback callback)
 {
 	// Init variables
 	txBuf = rbInit(BUF_SIZE);
+	frameCB = callback;
 
 	// Enable hardware
     ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_UART1);
@@ -26,11 +27,6 @@ void xbInit()
     ROM_UARTFIFOEnable(UART1_BASE);
     ROM_IntEnable(INT_UART1);
     ROM_UARTIntEnable(UART1_BASE, UART_INT_RX | UART_INT_RT | UART_INT_TX);
-}
-
-void xbSetFrameCB(FrameCallback cb)
-{
-	frameCB = cb;
 }
 
 void xbUARTIntHandler()

@@ -3,10 +3,13 @@
 #include <stdbool.h>
 #include <string.h>
 #include "main.h"
-#include "Time.h"
+#include "Timer.h"
 #include "XBee.h"
 #include "Protocol.h"
 #include "BufferedUART.h"
+
+Timer *rtc, *periodic;
+uint32_t timeDown, timeUp;
 
 void gpioInit()
 {
@@ -33,12 +36,10 @@ uint8_t gpioGetButtons()
 	return ROM_GPIOPinRead(GPIO_PORTF_BASE, GPIO_PIN_0 | GPIO_PIN_4);
 }
 
-void tick(uint32_t seconds)
+void tick(Timer *timer)
 {
-	gpioBlinkLEDs((seconds&0x07)<<1);
-	if (!(seconds & 0x0F))
-		timeUnsync();
-	pcSendSyncRequest(0xFFFF);
+	//gpioBlinkLEDs((timer->count&0x07)<<1);
+	pcSendUpdate(0xFFFF, timeDown, timeUp);
 }
 
 int main(void)
@@ -48,12 +49,11 @@ int main(void)
     ROM_FPULazyStackingEnable();
 
     // Configure devices
-    gpioInit();		// GPIO (buttons & LEDs)
-	timeInit();		// Timer
-	timeSetTickCB(tick);
-    xbInit();		// XBee connection (and UART)
-    xbSetFrameCB(pcFrameReceived);
-    uartInit();
+    gpioInit();							// GPIO (buttons & LEDs)
+	rtc = timerInit(0, 1.0, NULL);		// RTC timer
+	periodic = timerInit(1, 0.5, tick);	// Periodic timer
+    xbInit(pcFrameReceived);			// XBee connection (and UART)
+    uartInit();							// General purpose UART
 
     // Enable processor interrupts.
     ROM_IntMasterEnable();
@@ -63,15 +63,11 @@ int main(void)
     	uint8_t btns = gpioGetButtons();
     	if (!(btns & BTN_1))
     	{
-    		ROM_TimerDisable(TIMER0_BASE, TIMER_A);
-    		SysCtlDelay(SysCtlClockGet() / (10 * 3));
-    		GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_1 | GPIO_PIN_2 | GPIO_PIN_3, LED_R);
+    		timeDown = timerNow(rtc);
+    		pcSendUpdate(0xFFFF, timeDown, timeUp);
     		while (!(gpioGetButtons() & BTN_1));
-    		ROM_TimerEnable(TIMER0_BASE, TIMER_A);
-    		GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_1 | GPIO_PIN_2 | GPIO_PIN_3, 0);
-    		timeUnsync();
-    		//gpioBlinkLEDs(LED_B);
-    		//SysCtlDelay(SysCtlClockGet() / (10 * 3));
+    		timeUp = timerNow(rtc);
+    		pcSendUpdate(0xFFFF, timeDown, timeUp);
     	}
     }
 }

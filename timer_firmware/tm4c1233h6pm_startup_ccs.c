@@ -55,7 +55,8 @@ extern uint32_t __STACK_TOP;
 //
 //*****************************************************************************
 void xbUARTIntHandler();
-void timeIntHandler();
+void timer0IntHandler();
+void timer1IntHandler();
 void uartIntHandler();
 
 //*****************************************************************************
@@ -104,9 +105,9 @@ void (* const g_pfnVectors[])(void) =
     IntDefaultHandler,                      // ADC Sequence 2
     IntDefaultHandler,                      // ADC Sequence 3
     IntDefaultHandler,                      // Watchdog timer
-    timeIntHandler,                         // Timer 0 subtimer A
+    timer0IntHandler,                       // Timer 0 subtimer A
     IntDefaultHandler,                      // Timer 0 subtimer B
-    IntDefaultHandler,                      // Timer 1 subtimer A
+    timer1IntHandler,                       // Timer 1 subtimer A
     IntDefaultHandler,                      // Timer 1 subtimer B
     IntDefaultHandler,                      // Timer 2 subtimer A
     IntDefaultHandler,                      // Timer 2 subtimer B

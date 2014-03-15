@@ -1,0 +1,140 @@
+<!doctype html>
+<html>
+<head>
+	<meta charset="utf-8" />
+	<title>Demo</title>
+	<style>
+		#time     { font-size: 10em; }
+		.goodRow  { background-color:#afa; }
+		.warnRow  { background-color:#ff8; }
+		.errorRow { background-color:#f88; }
+	</style>
+</head>
+<body>
+	<script>
+		var running 			= false;
+		var time				= 0.0;
+		var lastUpdate 			= 0.0;
+		var clockInterval 		= null;
+		var deviceStates    	= null;
+		var deviceUpdateOffset 	= 0.0;
+ 		function sendCommand(command)
+ 		{
+			serverSocket.send("{\"command\":\""+command+"\"}");
+		}
+		function updateDisplay()
+		{
+			totalTime = running ? (time + (new Date().getTime() - lastUpdate)/1000) : time;
+			document.getElementById("time").innerHTML = totalTime.toFixed(2);
+		}
+		var serverSocket = new WebSocket("ws://"+window.location.host+"/ws");
+		serverSocket.onopen  = function(evt) { 
+			document.getElementById("state").innerHTML = "Connected to server.";
+			sendCommand('refresh'); 
+		};
+		serverSocket.onclose = function(evt) { 
+			document.getElementById("state").innerHTML = "Disconnected from server.";
+		};
+		serverSocket.onmessage = function(evt) { 
+			var data	= JSON.parse(evt.data);
+			switch (data['command'])
+			{
+			case 'updateClock':
+				running		= data['running'];
+				time		= data['time'];
+				lastUpdate  = new Date().getTime();
+				if (running && clockInterval == null)
+					clockInterval = window.setInterval(updateDisplay, 31);
+				else if (!running && clockInterval != null)
+				{
+					window.clearInterval(clockInterval);
+					clockInterval = null;
+				}
+				updateDisplay();
+				break;
+			case 'log':
+				logBox = document.getElementById('log');
+				logLine = document.createElement('div');
+				logLine.innerHTML = data['text'];
+				logBox.appendChild(logLine);
+				break;
+			case 'updateDevices':
+				deviceStates = data['devices'];
+				deviceUpdateOffset = timeNow() - data['timeNow'];
+				updateDevices();
+			}
+		};
+		function timeNow() { return (new Date().getTime()) / 1000; }
+		function secsAgo(t) 
+		{ 
+			return timeNow() - t - deviceUpdateOffset;
+		}
+		function updateDevices()
+		{
+			// Clear the devices div
+			table = document.getElementById('devices');
+			while (table.firstChild)
+				table.removeChild(table.firstChild);
+
+			// Iterate through the devices and add rows
+			Object.keys(deviceStates).forEach(function (key) { 
+				var dev = deviceStates[key];
+				var tr = table.insertRow();
+				// Device ID
+				var td = tr.insertCell(-1);
+				td.innerHTML = dev['name'];
+				td.title = key;
+				// Signal strength
+				// Radio sensitivity is -100dBm, max signal is -36dB
+				td = tr.insertCell(-1);
+				var sigImg = document.createElement('img');
+				sigImg.title = '-' + dev['rssi'] + 'dBm';
+				if (dev['rssi'] < 50)			// +50dB over floor
+					sigImg.src = 'sig5.png';
+				else if (dev['rssi'] < 60)		// +40dB
+					sigImg.src = 'sig4.png';
+				else if (dev['rssi'] < 70)		// +30dB
+					sigImg.src = 'sig3.png';
+				else if (dev['rssi'] < 80)		// +20dB
+					sigImg.src = 'sig2.png';
+				else if (dev['rssi'] < 90)		// +10dB
+					sigImg.src = 'sig1.png';
+				td.appendChild(sigImg);
+				// Status
+				td = tr.insertCell(-1);
+				var lastHeard = secsAgo(dev['lastHeard']);
+				var devSync   = dev['timeErr'];
+				if (lastHeard > 2)
+				{
+					td.innerHTML = "Last seen " + lastHeard.toFixed(0) + "s ago."
+					if (lastHeard < 5)
+						td.className = "warnRow";
+					else
+						td.className = "errorRow";
+				}
+				else if (devSync > 0.01)
+				{
+					td.innerHTML = "Poor sync: " + (devSync<0?'':'+') +
+						devSync.toFixed(0) + "s";
+					td.className = "errorRow";
+				}
+				else
+				{
+					td.innerHTML = "Working."
+					td.className = "goodRow";
+					td.title = 'Last seen ' + lastHeard.toFixed(1) + ' s ago.' +
+						'  Sync ' + devSync.toFixed(4) + " s."
+				}
+			});
+		}
+		setInterval(updateDevices, 1000);
+	</script>
+
+	<h1 id="time">00:00.00</h1>
+	<div id="state">Not connected to server.</div>
+	<button onclick="sendCommand('start')">Start</button>
+	<button onclick="sendCommand('stop')">Stop</button>
+	<button onclick="sendCommand('reset')">Reset</button>
+	<table><tbody id="devices"></tbody></table>
+</body>
+</html>

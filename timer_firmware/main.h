@@ -18,6 +18,9 @@
 #include "driverlib/sysctl.h"
 #include "driverlib/uart.h"
 #include "driverlib/timer.h"
+#include "Timer.h"
+
+extern Timer* rtc;
 
 #define LED_R	GPIO_PIN_1
 #define LED_G	GPIO_PIN_3
