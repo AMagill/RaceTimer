@@ -6,6 +6,7 @@
 static uint8_t rxBuf[BUF_SIZE];
 static RingBuffer *txBuf;
 static FrameCallback frameCB = NULL;
+static bool sleeping = true;
 
 // Uses UART1: Rx PB0 + Tx PB1
 void xbInit(FrameCallback callback)
@@ -16,7 +17,12 @@ void xbInit(FrameCallback callback)
 
 	// Enable hardware
     ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_UART1);
+    ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOA);
     ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOB);
+
+    // XBee sleep pin (active high)
+	ROM_GPIOPinTypeGPIOOutput(GPIO_PORTA_BASE, GPIO_PIN_5);
+	GPIOPinWrite(GPIO_PORTA_BASE, GPIO_PIN_2, GPIO_PIN_5);
 
 	// Configure UART
     GPIOPinConfigure(GPIO_PB0_U1RX);
@@ -25,8 +31,25 @@ void xbInit(FrameCallback callback)
     ROM_UARTConfigSetExpClk(UART1_BASE, ROM_SysCtlClockGet(), 57600,
                             UART_CONFIG_WLEN_8 | UART_CONFIG_STOP_ONE | UART_CONFIG_PAR_NONE);
     ROM_UARTFIFOEnable(UART1_BASE);
+    IntRegister(INT_UART1, xbUARTIntHandler);
     ROM_IntEnable(INT_UART1);
     ROM_UARTIntEnable(UART1_BASE, UART_INT_RX | UART_INT_RT | UART_INT_TX);
+}
+
+void xbSleep(bool sleep)
+{
+	if (sleeping == sleep) return;	// Nothing to do.
+
+	if (sleep)
+	{
+		GPIOPinWrite(GPIO_PORTA_BASE, GPIO_PIN_5, GPIO_PIN_5);
+	}
+	else
+	{
+		GPIOPinWrite(GPIO_PORTA_BASE, GPIO_PIN_5, 0);
+		ROM_SysCtlDelay(ROM_SysCtlClockGet()*3/(3*1000));	// Wait for wake ~3ms
+	}
+	sleeping = sleep;
 }
 
 void xbUARTIntHandler()
@@ -87,11 +110,17 @@ void xbUARTIntHandler()
     {
     	while (!rbIsEmpty(txBuf) && ROM_UARTSpaceAvail(UART1_BASE))
     		ROM_UARTCharPut(UART1_BASE, rbRead(txBuf));
+
+    	// If we're out of bytes to send, put the XBee to sleep
+    	if (rbIsEmpty(txBuf))
+    		xbSleep(true);
     }
 }
 
 void xbUARTSend(const uint8_t *buffer, uint32_t count)
 {
+	xbSleep(false);	// Wake up!
+
     // Loop while there are more characters to send.
     while(count--)
     {
@@ -110,7 +139,7 @@ void xbSendFrameTx16(uint16_t address, uint8_t opts, const uint8_t *msg, uint16_
 	frame[1] = (length + 5) >> 8;	// Length MSB
 	frame[2] = (length + 5) & 0xFF;	// Length LSB
 	frame[3] = 0x01;				// Frame type: TX w/ 16-bit address
-	frame[4] = 0x01;				// Frame ID
+	frame[4] = !opts;				// Frame ID	- don't request response if NO_ACK
 	frame[5] = address >> 8;		// Address MSB
 	frame[6] = address & 0xFF;		// Address LSB
 	frame[7] = opts;				// Options

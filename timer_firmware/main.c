@@ -2,45 +2,67 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
+#include "inc/hw_nvic.h"
 #include "main.h"
 #include "Timer.h"
 #include "XBee.h"
 #include "Protocol.h"
 #include "BufferedUART.h"
+#include "Battery.h"
+#include "BigButton.h"
 
-Timer *rtc, *periodic;
+Timer *periodic;
 uint32_t timeDown, timeUp;
 
+void buttonIntHandler();
 void gpioInit()
 {
 	ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOF);
 
 	// Configure LEDs
+	// On-board RGB LED
 	ROM_GPIOPinTypeGPIOOutput(GPIO_PORTF_BASE, GPIO_PIN_1 | GPIO_PIN_2 | GPIO_PIN_3);
 	GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_1 | GPIO_PIN_2 | GPIO_PIN_3, 0);
 
 	// Configure buttons
+	// On board buttons
 	ROM_GPIOPinTypeGPIOInput(GPIO_PORTF_BASE, GPIO_PIN_0 | GPIO_PIN_4);
 	ROM_GPIOPadConfigSet(GPIO_PORTF_BASE, GPIO_PIN_0 | GPIO_PIN_4, GPIO_STRENGTH_2MA, GPIO_PIN_TYPE_STD_WPU);
+
 }
 
-void gpioBlinkLEDs(uint8_t which)
+
+void tick()
 {
-	GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_1 | GPIO_PIN_2 | GPIO_PIN_3, which & (LED_R|LED_G|LED_B));
-	SysCtlDelay(SysCtlClockGet() / (1000 * 3));
-	GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_1 | GPIO_PIN_2 | GPIO_PIN_3, 0);
+	ROM_TimerIntClear(TIMER2_BASE, TIMER_A);
+	pcSendHeartbeat();
+	batterySampleTrigger();
+
+	if (pcLastHeard() > 1000)	// Haven't heard an ACK for over a second
+		buttonSetBlink(BLINK_SOS);
+	else
+		buttonSetBlink(BLINK_STROBE);
 }
 
-uint8_t gpioGetButtons()
+
+void buttonCB(bool pressed, uint32_t time)
 {
-	return ROM_GPIOPinRead(GPIO_PORTF_BASE, GPIO_PIN_0 | GPIO_PIN_4);
+	pcSendEvent(time, pressed ? EVT_BTN_DOWN : EVT_BTN_UP);
 }
 
-void tick(Timer *timer)
+
+
+void moveVtableToRAM()
 {
-	//gpioBlinkLEDs((timer->count&0x07)<<1);
-	pcSendUpdate(0xFFFF, timeDown, timeUp);
+	uint32_t ui32Idx, ui32Value;
+	extern void (*g_pfnRAMVectors[NUM_INTERRUPTS])(void);
+
+	ui32Value = HWREG(NVIC_VTABLE);
+	for(ui32Idx = 0; ui32Idx < NUM_INTERRUPTS; ui32Idx++)
+		g_pfnRAMVectors[ui32Idx] = (void (*)(void))HWREG((ui32Idx * 4) + ui32Value);
+	HWREG(NVIC_VTABLE) = (uint32_t)g_pfnRAMVectors;
 }
+
 
 int main(void)
 {
@@ -48,26 +70,26 @@ int main(void)
     ROM_SysCtlClockSet(SYSCTL_SYSDIV_4 | SYSCTL_USE_PLL | SYSCTL_OSC_MAIN | SYSCTL_XTAL_16MHZ);
     ROM_FPULazyStackingEnable();
 
+    ROM_IntMasterDisable();
+    moveVtableToRAM();
+
     // Configure devices
     gpioInit();							// GPIO (buttons & LEDs)
-	rtc = timerInit(0, 1.0, NULL);		// RTC timer
-	periodic = timerInit(1, 0.5, tick);	// Periodic timer
+    rtcInit();
+    buttonInit(buttonCB);
+    ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_TIMER2);
+	periodic = timerInit(TIMER2_BASE, 0.5, tick);	// Periodic timer
     xbInit(pcFrameReceived);			// XBee connection (and UART)
     uartInit();							// General purpose UART
+    batteryInit();
 
     // Enable processor interrupts.
     ROM_IntMasterEnable();
 
-    while(1)
+
+    while (1)
     {
-    	uint8_t btns = gpioGetButtons();
-    	if (!(btns & BTN_1))
-    	{
-    		timeDown = timerNow(rtc);
-    		pcSendUpdate(0xFFFF, timeDown, timeUp);
-    		while (!(gpioGetButtons() & BTN_1));
-    		timeUp = timerNow(rtc);
-    		pcSendUpdate(0xFFFF, timeDown, timeUp);
-    	}
+    	ROM_SysCtlSleep();
     }
 }
+

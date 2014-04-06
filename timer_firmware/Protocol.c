@@ -2,8 +2,11 @@
 #include "XBee.h"
 #include "Timer.h"
 #include "Protocol.h"
+#include "Battery.h"
 
-uint32_t lastHeartbeat = 0, lastTimeError = INT32_MAX;
+#define MASTER_ADDR 0x0000
+
+uint32_t lastHeardMaster = 0;
 
 void pcFrameReceived(uint8_t *frame, uint32_t size)
 {
@@ -19,40 +22,52 @@ void pcFrameReceived(uint8_t *frame, uint32_t size)
 
 		switch (body[0])
 		{
-		case 'S':	// Heartbeat
-		{
-			if (size - 5 < sizeof(heartbeatMsg)) break;
-			heartbeatMsg *msg = (heartbeatMsg*)body;
-			uint32_t now = timerNow(rtc);
-			int64_t delta = msg->time - now;
-			//if (!(rtc->count & 0x0F))
-				timerAdjust(rtc, delta);
-			lastTimeError = delta;
-			lastHeartbeat = timerNow(rtc);
-			break;
-		}
 		default:	// Unknown incoming packet
 			break;
 		}
 
-		GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_2, GPIO_PIN_2);
-		SysCtlDelay(SysCtlClockGet() / (1000 * 3));
-		GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_2, 0);
-
 		break;
 	}
+	case 0x89:	// TX Status
+		if (frame[2] == 0)		// Success
+			lastHeardMaster = rtcMillis();
+		break;
 	default:
 		break;
 	}
 }
 
-void pcSendUpdate(uint16_t addr, uint32_t timeDown, uint32_t timeUp)
+void pcSendHeartbeat()
 {
-	updateMsg msg;
-	msg.type     = 'u';
-	msg.timeErr  = lastTimeError;
-	msg.timeDown = timeDown;
-	msg.timeUp   = timeUp;
-	xbSendFrameTx16(addr, XB_OPT_NONE, (uint8_t*)&msg, sizeof(msg));
+	// This is timing-critical, so ensure that the XBee is awake and ready to go first.
+	xbSleep(false);
+
+	// Heartbeat message is time-sensitive, so don't allow retransmissions.
+	// Lost packets are better than late packets here.
+	heartbeatMsg msg;
+	msg.type     = 'h';
+	msg.time     = rtcMillis();
+	msg.battery  = batteryGetLevel();
+	xbSendFrameTx16(MASTER_ADDR, XB_OPT_NO_ACK, (uint8_t*)&msg, sizeof(msg));
+
+	// Still, it's nice to know if someone is listening, so send a ping
+	// just so we can see if it gets ACKed.
+	pingMsg msg2;
+	msg.type     = 'p';
+	xbSendFrameTx16(MASTER_ADDR, XB_OPT_NONE, (uint8_t*)&msg2, sizeof(msg2));
 }
 
+
+void pcSendEvent(uint32_t eventTime, char eventType)
+{
+	eventMsg msg;
+	msg.type      = 'e';
+	msg.eventTime = eventTime;
+	msg.eventType = eventType;
+	xbSendFrameTx16(MASTER_ADDR, XB_OPT_NONE, (uint8_t*)&msg, sizeof(msg));
+}
+
+uint32_t pcLastHeard()
+{
+	return rtcMillis() - lastHeardMaster;
+}

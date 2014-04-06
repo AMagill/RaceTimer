@@ -3,7 +3,7 @@
 <head>
 	<meta charset="utf-8" />
 	<meta content='width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0' name='viewport' />
-	<title>Demo</title>
+	<title>Race timer</title>
 	<style>
 		body, html 	{ height: 100%; margin: 0px auto; padding: 0; }
 		#bigBox    	{
@@ -13,7 +13,6 @@
 			background-color:#ddd; 
 			text-align: center;
 			display: table;
-			margin-bottom: 40px;
 		}
 		#timeText 	{
 			display: table-cell;
@@ -21,7 +20,7 @@
 			vertical-align: middle; 
 			text-align: center; 	
 		}
-		#readyText  {
+		#statusText  {
 			font-size: 2em;
 			position: absolute;
 			width: 100%;
@@ -29,10 +28,15 @@
 			left: 0px;
 		}
 		table { margin: 0 auto;}
-		#controls   { text-align: center;    }
+		#controls   { margin: 40px; text-align: center; }
+		#status     { text-align: center; }
 		.good	  	{ background-color:#afa; }
 		.warn	  	{ background-color:#ff8; }
 		.error	 	{ background-color:#f88; }
+		button { width: 30%; height: 8em; font-size: 1.5em;}
+		#startButton { background-color: #afa; }
+		#stopButton  { background-color: #f88; }
+		#resetButton { background-color: #ff8; }
 	</style>
 </head>
 <body>
@@ -71,18 +75,8 @@
 			document.getElementById("timeText").innerHTML = formatTimeMSF(totalTime);
 		}
 		var serverSocket = new WebSocket("ws://"+window.location.host+"/ws");
-		serverSocket.onopen  = function(evt) { 
-			var state = document.getElementById("state");
-			state.innerHTML = "Connected to server.";
-			state.className = "good";
-			sendCommand('refresh'); 
-		};
-		serverSocket.onclose = function(evt) { 
-			var state = document.getElementById("state");
-			state.innerHTML = "Lost connection to server.";
-			state.className = "error";
-
-		};
+		serverSocket.onopen  = function(evt) { updateStatus(); };
+		serverSocket.onclose = function(evt) { updateStatus(); };
 		serverSocket.onmessage = function(evt) { 
 			var data	= JSON.parse(evt.data);
 			switch (data['command'])
@@ -98,6 +92,8 @@
 					window.clearInterval(clockInterval);
 					clockInterval = null;
 				}
+
+				updateStatus();
 				updateDisplay();
 				break;
 			case 'log':
@@ -110,12 +106,70 @@
 				deviceStates = data['devices'];
 				deviceUpdateOffset = timeNow() - data['timeNow'];
 				updateDevices();
+				updateStatus();
 			}
 		};
 		function timeNow() { return (new Date().getTime()) / 1000; }
 		function secsAgo(t) 
 		{ 
 			return timeNow() - t - deviceUpdateOffset;
+		}
+		function prettySecsAgo(t)
+		{
+			if (t == 0) 
+				return "NEVER";
+
+			var ago = timeNow() - t - deviceUpdateOffset;
+
+			if (ago < 10)
+				return String(ago.toFixed(2)) + "s"
+
+			if (ago < 60)
+				return String(Math.floor(ago)) + "s"
+
+			if (ago < 3600)
+			{
+				var min = Math.floor(ago/60);
+				var sec = Math.floor(ago - (min*60));
+				return String(min) + "m " + String(sec) + "s";
+			}
+
+			var hour = Math.floor(ago/3600);
+			var min  = Math.floor((ago/60) - (hour*60));
+			return String(hour) + "h " + String(min) + "m";
+		}
+		function updateStatus()
+		{
+			var statusText = document.getElementById("statusText");
+
+			if (serverSocket.readyState != WebSocket.OPEN)
+			{
+				statusText.innerHTML = "Not connected to server.  (Refresh page to retry)";
+				statusText.className = "error";
+				return;
+			}
+
+			var noDevices = false;
+			if (deviceStates == null)
+				noDevices = true;
+			else
+			{
+				Object.keys(deviceStates).forEach(function (key) {
+					if (secsAgo(deviceStates[key]['lastHeard']) > 2)
+						noDevices = true;
+				});
+			}
+			if (noDevices)
+			{
+				statusText.innerHTML = "Not all devices connected.";
+				statusText.className = "warn";
+				return;
+			}
+
+			// Nothing else applies.  
+			statusText.innerHTML = "Working";
+			statusText.className = "good";
+
 		}
 		function updateDevices()
 		{
@@ -125,6 +179,7 @@
 				table.removeChild(table.firstChild);
 
 			// Iterate through the devices and add rows
+			if (deviceStates == null) return;
 			Object.keys(deviceStates).forEach(function (key) { 
 				var dev = deviceStates[key];
 				var tr = table.insertRow();
@@ -137,41 +192,41 @@
 				td = tr.insertCell(-1);
 				var sigImg = document.createElement('img');
 				sigImg.title = '-' + dev['rssi'] + 'dBm';
-				if (dev['rssi'] < 50)			// +50dB over floor
-					sigImg.src = 'sig5.png';
-				else if (dev['rssi'] < 60)		// +40dB
-					sigImg.src = 'sig4.png';
-				else if (dev['rssi'] < 70)		// +30dB
-					sigImg.src = 'sig3.png';
-				else if (dev['rssi'] < 80)		// +20dB
-					sigImg.src = 'sig2.png';
-				else if (dev['rssi'] < 90)		// +10dB
-					sigImg.src = 'sig1.png';
+				if      (dev['rssi'] == 0)  sigImg.src = 'sig0.png';
+				else if (dev['rssi'] < 50)	sigImg.src = 'sig5.png';	//   +50dB over floor
+				else if (dev['rssi'] < 60)	sigImg.src = 'sig4.png';	//   +40dB
+				else if (dev['rssi'] < 70)	sigImg.src = 'sig3.png';	//   +30dB
+				else if (dev['rssi'] < 80)	sigImg.src = 'sig2.png';	//   +20dB
+				else                        sigImg.src = 'sig1.png';	// < +10dB
 				td.appendChild(sigImg);
+				// Battery level
+				td = tr.insertCell(-1);
+				var batImg = document.createElement('img');
+				batImg.title = Math.floor(dev['batt']*100/255) + '%';
+				if      (dev['batt'] <  50)	batImg.src = 'bat1.png';	// < 20%
+				else if (dev['batt'] < 100)	batImg.src = 'bat2.png';	// < 40%
+				else if (dev['batt'] < 150)	batImg.src = 'bat3.png';	// < 60%
+				else if (dev['batt'] < 200)	batImg.src = 'bat4.png';	// < 80%
+				else                        batImg.src = 'bat5.png';
+				td.appendChild(batImg);
 				// Status
 				td = tr.insertCell(-1);
-				var lastHeard = secsAgo(dev['lastHeard']);
-				var devSync   = dev['timeErr'];
+				var lastHeard    = secsAgo(dev['lastHeard']);
+				var lastHeardStr = prettySecsAgo(dev['lastHeard']);
 				if (lastHeard > 2)
 				{
-					td.innerHTML = "Last seen " + lastHeard.toFixed(0) + "s ago."
+					td.innerHTML = "Last seen " + lastHeardStr + " ago."
+
 					if (lastHeard < 5)
 						td.className = "warn";
 					else
 						td.className = "error";
 				}
-				else if (devSync > 0.01)
-				{
-					td.innerHTML = "Poor sync: " + (devSync<0?'':'+') +
-						devSync.toFixed(0) + "s";
-					td.className = "error";
-				}
 				else
 				{
 					td.innerHTML = "Working."
 					td.className = "good";
-					td.title = 'Last seen ' + lastHeard.toFixed(1) + ' s ago.' +
-						'  Sync ' + devSync.toFixed(4) + " s."
+					td.title = 'Last seen ' + lastHeardStr + ' ago.'
 				}
 			});
 		}
@@ -189,14 +244,15 @@
 
 	<div id="bigBox">
 		<span id="timeText">00:00.00</span>
-		<div id="readyText">Waiting</div>
+		<div id="statusText" class="warn">Connecting to server...</div>
 	</div>
 	<div id="controls">
-		<button onclick="sendCommand('start')">Start</button>
-		<button onclick="sendCommand('stop')">Stop</button>
-		<button onclick="sendCommand('reset')">Reset</button>
+		<button id="startButton" onclick="sendCommand('start')">Start</button>
+		<button id="stopButton"  onclick="sendCommand('stop')">Stop</button>
+		<button id="resetButton" onclick="sendCommand('reset')">Reset</button>
+	</div>
+	<div id="status">
 		<br/>
-		<span id="state">Not connected to server.</span>
 		<table><tbody id="devices"></tbody></table>
 	</div>
 </body>

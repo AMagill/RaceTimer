@@ -5,18 +5,16 @@ struct _Timer;
 typedef void (*TimerCallback)(struct _Timer*);
 
 typedef struct _Timer {
-	uint8_t  		timer;
 	uint32_t 		base;
-	float    		period;
+	uint32_t		timer;
 	uint32_t 		periodTicks;
-	float    		fracLen;
-	uint32_t 		count;
-	TimerCallback 	callback;
-	bool			adjusted;
 } Timer;
 
-Timer* 		timerInit(uint8_t timer, float period, TimerCallback callback);
-uint32_t 	timerNow(Timer *this);
-void 		timerAdjust(Timer *this, uint32_t offset);
+void 		rtcInit();
+uint32_t 	rtcMillis();
+Timer* timerInit(uint32_t base, float period, void (*callback)(void));
+void timerStart(Timer *this);
+void timerStop(Timer *this);
+void timerRestart(Timer *this);
 
 #endif /* TIMER_H_ */

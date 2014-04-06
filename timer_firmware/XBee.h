@@ -7,6 +7,7 @@
 typedef void (*FrameCallback)(uint8_t*,uint32_t);
 
 void xbInit();
+void xbSleep(bool sleep);
 void xbUARTIntHandler();
 void xbSendFrameTx16(uint16_t address, uint8_t opts, const uint8_t *msg, uint16_t length);
 void xbSetFrameCB(FrameCallback cb);

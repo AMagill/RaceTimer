@@ -3,71 +3,57 @@
 #include "BufferedUART.h"
 #include <math.h>
 
-static Timer* these[6];
-
-Timer* timerInit(uint8_t timer, float period, TimerCallback callback)
+void rtcInit()
 {
-	const uint32_t allBases[]   = {TIMER0_BASE, TIMER1_BASE, TIMER2_BASE, TIMER3_BASE, TIMER4_BASE, TIMER5_BASE};
-	const uint32_t allPeriphs[] = {SYSCTL_PERIPH_TIMER0, SYSCTL_PERIPH_TIMER1, SYSCTL_PERIPH_TIMER2,
-								   SYSCTL_PERIPH_TIMER3, SYSCTL_PERIPH_TIMER4, SYSCTL_PERIPH_TIMER5};
-	const uint32_t allInts[]    = {INT_TIMER0A, INT_TIMER1A, INT_TIMER2A, INT_TIMER3A, INT_TIMER4A, INT_TIMER5A};
+    ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_WTIMER0);
+    ROM_TimerConfigure(WTIMER0_BASE, TIMER_CFG_SPLIT_PAIR | TIMER_CFG_A_PERIODIC);
+    ROM_TimerPrescaleSet(WTIMER0_BASE, TIMER_A, ROM_SysCtlClockGet()/1000);
+    //ROM_TimerLoadSet(TIMER0_BASE, TIMER_A, 0xFFFFFFFF);
+    ROM_TimerEnable(WTIMER0_BASE, TIMER_A);
+}
 
-	Timer *this 		= malloc(sizeof(Timer));
-	this->timer 		= timer;
-	this->base  		= allBases[timer];
-	this->count 		= 0;
-	this->period 		= period;
+uint32_t rtcMillis()
+{
+	return 0xFFFFFFFF - ROM_TimerValueGet(WTIMER0_BASE, TIMER_A);
+}
+
+int32_t rtcSub(uint32_t t1, uint32_t t2)
+{
+	// Yes, this is stupidly simple, but there's too much risk for bugs if the
+	// typecast isn't done properly.
+	return (int32_t)(t1-t2);
+}
+
+
+Timer* timerInit(uint32_t base, float period, void (*callback)(void))
+{
+	Timer *this = malloc(sizeof(Timer));
+	this->base 			= base;
+	this->timer 		= TIMER_BOTH;
 	this->periodTicks 	= period * ROM_SysCtlClockGet();
-	this->fracLen       = (float)this->periodTicks / (1<<12);
-	this->callback      = callback;
-	this->adjusted		= 0;
-	these[timer] 		= this;
 
-    ROM_SysCtlPeripheralEnable(allPeriphs[timer]);
-    ROM_TimerConfigure(this->base, TIMER_CFG_PERIODIC_UP);
-    ROM_TimerLoadSet(this->base, TIMER_A, this->periodTicks);
-    ROM_IntEnable(allInts[timer]);
-    ROM_TimerIntEnable(this->base, TIMER_TIMA_TIMEOUT);
-    ROM_TimerEnable(this->base, TIMER_A);
+    //ROM_SysCtlPeripheralEnable(allPeriphs[iBase]);
+    ROM_TimerConfigure(this->base, TIMER_CFG_PERIODIC);
+    ROM_TimerLoadSet(this->base, this->timer, this->periodTicks);
+    TimerIntRegister(this->base, this->timer, callback);
+    ROM_TimerIntEnable(this->base, (this->base==TIMER_B)?TIMER_TIMB_TIMEOUT:TIMER_TIMA_TIMEOUT);
+    ROM_TimerEnable(this->base, this->timer);
 
     return this;
 }
 
-uint32_t timerNow(Timer *this)
+void timerStart(Timer *this)
 {
-	uint32_t frac = ROM_TimerValueGet(this->base, TIMER_A) / this->fracLen;
-	return (this->count << 12) + (frac & 0x0FFF);	// 20.12
+    ROM_TimerEnable(this->base, this->timer);
 }
 
-void timerAdjust(Timer *this, uint32_t offset)
+void timerStop(Timer *this)
 {
-	double offset_i, offset_f;
-	offset_f = modf((double)offset / (1<<12), &offset_i);	// Split into integer and fractional parts
-	int32_t tav = HWREG(TIMER0_BASE + TIMER_O_TAV) + (offset_f * this->periodTicks);
-	if (tav > this->periodTicks)
-	{
-		offset_i++;
-		tav -= this->periodTicks;
-	} else if (tav < 0)
-	{
-		offset_i--;
-		tav += this->periodTicks;
-	}
-	this->count += offset_i;
-	HWREG(TIMER0_BASE + TIMER_O_TAV) = tav;
-	this->adjusted = true;
+	ROM_TimerDisable(this->base, this->timer);
 }
 
-void timerIntHandler(Timer *this)
+void timerRestart(Timer *this)
 {
-	ROM_TimerIntClear(this->base, TIMER_TIMA_TIMEOUT);
-	this->count++;
-	if (this->callback) this->callback(this);
+	ROM_TimerEnable(this->base, this->timer);
+	ROM_TimerLoadSet(this->base, this->timer, this->periodTicks);
 }
-
-void timer0IntHandler() { timerIntHandler(these[0]); }
-void timer1IntHandler() { timerIntHandler(these[1]); }
-void timer2IntHandler() { timerIntHandler(these[2]); }
-void timer3IntHandler() { timerIntHandler(these[3]); }
-void timer4IntHandler() { timerIntHandler(these[4]); }
-void timer5IntHandler() { timerIntHandler(these[5]); }
