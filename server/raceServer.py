@@ -114,8 +114,11 @@ class XBeeNetwork:
 
 			if data['rf_data'][0] == 'h':	# Heartbeat message
 				(cmd, devTime, devBatt) = \
-					struct.unpack("<cLB", data['rf_data'])
+					struct.unpack("<cLH", data['rf_data'])
 
+				# 3000 = 5V
+				# 2000 = 3V
+				devBatt = max(0, min(100, (devBatt - 2000) / 10))
 				timeOff = time.time() - (devTime/1000.0)
 				#if (srcAddr in self.remoteUnits):
 				#	print("L %.4f R %.4f E %.4f" % (time.time(), devTime/1000.0, timeOff - self.remoteUnits[srcAddr]['timeOff']))

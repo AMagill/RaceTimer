@@ -7,7 +7,7 @@
 typedef struct __attribute__((packed)) {
 	char      type;
 	uint32_t  time;		// microseconds
-	uint8_t   battery;
+	uint16_t   battery;
 } heartbeatMsg;
 
 typedef struct __attribute__((packed)) {

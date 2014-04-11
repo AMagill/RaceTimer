@@ -1,26 +1,18 @@
 #include "main.h"
 #include "Battery.h"
 
-static uint8_t batteryLevel;
+static uint16_t batteryLevel;
 
 #define SEQ 0
 
 void batteryADCIntHandler()
 {
 	uint32_t buf;
-	float level;
 
 	ROM_ADCIntClear(ADC0_BASE, SEQ);
 	ROM_ADCSequenceDataGet(ADC0_BASE, SEQ, &buf);
 
-	// V = (buf / 0xFFF) * 3.3V * 2
-	// Max: 5.5V  Min: 3.2V  Diff: 2.3V
-	// Max: 3412  Min: 1985  Diff: 1427
-
-	level = (buf-1985) * (255.0/1427.0);
-	if      (level < 0)    batteryLevel = 0;
-	else if (level >= 255) batteryLevel = 255;
-	else                   batteryLevel = (uint8_t)level;
+	batteryLevel = (uint16_t)buf;
 }
 
 void batteryInit()
@@ -50,7 +42,7 @@ void batterySampleTrigger()
 	ROM_ADCProcessorTrigger(ADC0_BASE, SEQ);
 }
 
-uint8_t batteryGetLevel()
+uint16_t batteryGetLevel()
 {
 	return batteryLevel;
 }
