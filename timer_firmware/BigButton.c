@@ -14,9 +14,9 @@ static uint32_t blinkPattern;
 static uint32_t blinkStep;
 static uint32_t const *blinkData;
 
-void debounceCB();
-void blinkCB();
-void buttonIntHandler();
+static void debounceCB();
+static void blinkCB();
+static void buttonIntHandler();
 
 void buttonInit(ButtonCallback btnCB)
 {

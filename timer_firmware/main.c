@@ -10,6 +10,7 @@
 #include "BufferedUART.h"
 #include "Battery.h"
 #include "BigButton.h"
+#include "Display.h"
 
 Timer *periodic;
 uint32_t timeDown, timeUp;
@@ -28,7 +29,6 @@ void gpioInit()
 	// On board buttons
 	ROM_GPIOPinTypeGPIOInput(GPIO_PORTF_BASE, GPIO_PIN_0 | GPIO_PIN_4);
 	ROM_GPIOPadConfigSet(GPIO_PORTF_BASE, GPIO_PIN_0 | GPIO_PIN_4, GPIO_STRENGTH_2MA, GPIO_PIN_TYPE_STD_WPU);
-
 }
 
 
@@ -82,6 +82,11 @@ int main(void)
     xbInit(pcFrameReceived);			// XBee connection (and UART)
     uartInit();							// General purpose UART
     batteryInit();
+    displayInit();
+
+    displayScrollText("Woot!", 100);
+    displaySetText("");
+    displayUpdate();
 
     // Enable processor interrupts.
     ROM_IntMasterEnable();

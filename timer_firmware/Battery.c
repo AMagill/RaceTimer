@@ -20,7 +20,7 @@ void batteryInit()
 	// HACK: Looks like there's a bug, so this has to go before periph enable to be safe.
 	// Stellaris -> Tiva changed which registers are used to enable devices, and this
 	// function works on the legacy-support register, which can behave oddly.
-	ROM_SysCtlADCSpeedSet(SYSCTL_ADCSPEED_250KSPS);
+	//ROM_SysCtlADCSpeedSet(SYSCTL_ADCSPEED_250KSPS);
 
 	ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_ADC0);
 	ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOD);

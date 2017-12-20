@@ -19,6 +19,7 @@
 #include "driverlib/sysctl.h"
 #include "driverlib/uart.h"
 #include "driverlib/timer.h"
+#include "driverlib/i2c.h"
 #include "Timer.h"
 
 extern Timer* rtc;
