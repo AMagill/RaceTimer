@@ -23,37 +23,37 @@ void buttonInit(ButtonCallback btnCB)
 	buttonCB = btnCB;
 
 	// Enable peripherals
-	ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOA);
-	ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_TIMER0);
-    ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_TIMER1);
+	SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOA);
+	SysCtlPeripheralEnable(SYSCTL_PERIPH_TIMER0);
+    SysCtlPeripheralEnable(SYSCTL_PERIPH_TIMER1);
 
 	// LED output
-	ROM_GPIOPinTypeGPIOOutput(GPIO_PORTA_BASE, GPIO_PIN_2);
+	GPIOPinTypeGPIOOutput(GPIO_PORTA_BASE, GPIO_PIN_2);
 	GPIOPinWrite(GPIO_PORTA_BASE, GPIO_PIN_2, 0);
 
 	// Button input
-	ROM_GPIOPinTypeGPIOInput(GPIO_PORTA_BASE, GPIO_PIN_3);
-	ROM_GPIOPadConfigSet(GPIO_PORTA_BASE, GPIO_PIN_3, GPIO_STRENGTH_2MA, GPIO_PIN_TYPE_STD_WPD);
-	ROM_GPIOIntTypeSet(GPIO_PORTA_BASE, GPIO_PIN_3, GPIO_BOTH_EDGES);
+	GPIOPinTypeGPIOInput(GPIO_PORTA_BASE, GPIO_PIN_3);
+	GPIOPadConfigSet(GPIO_PORTA_BASE, GPIO_PIN_3, GPIO_STRENGTH_2MA, GPIO_PIN_TYPE_STD_WPD);
+	GPIOIntTypeSet(GPIO_PORTA_BASE, GPIO_PIN_3, GPIO_BOTH_EDGES);
 	GPIOIntRegister(GPIO_PORTA_BASE, buttonIntHandler);
 	GPIOIntClear(GPIO_PORTA_BASE, GPIO_PIN_3);
 	GPIOIntEnable(GPIO_PORTA_BASE, GPIO_PIN_3);
 
 	// Debounce timer
-	dbTimerTicks = ROM_SysCtlClockGet() / 256;
-    ROM_TimerConfigure(dbTimerBase, TIMER_CFG_ONE_SHOT);
-    ROM_TimerLoadSet(dbTimerBase, TIMER_A, dbTimerTicks);
+	dbTimerTicks = SysCtlClockGet() / 256;
+    TimerConfigure(dbTimerBase, TIMER_CFG_ONE_SHOT);
+    TimerLoadSet(dbTimerBase, TIMER_A, dbTimerTicks);
     TimerIntRegister(dbTimerBase, TIMER_A, debounceCB);
-    ROM_TimerIntEnable(dbTimerBase, TIMER_TIMA_TIMEOUT);
+    TimerIntEnable(dbTimerBase, TIMER_TIMA_TIMEOUT);
 
     // Blink timer
     buttonSetBlink(BLINK_SOS);
-    blTimerTicks = ROM_SysCtlClockGet() / 1000;
-    ROM_TimerConfigure(blTimerBase, TIMER_CFG_PERIODIC);
-    ROM_TimerLoadSet(blTimerBase, TIMER_A, blTimerTicks*1000);
+    blTimerTicks = SysCtlClockGet() / 1000;
+    TimerConfigure(blTimerBase, TIMER_CFG_PERIODIC);
+    TimerLoadSet(blTimerBase, TIMER_A, blTimerTicks*1000);
     TimerIntRegister(blTimerBase, TIMER_A, blinkCB);
-    ROM_TimerIntEnable(blTimerBase, TIMER_TIMA_TIMEOUT);
-    ROM_TimerEnable(blTimerBase, TIMER_A);
+    TimerIntEnable(blTimerBase, TIMER_TIMA_TIMEOUT);
+    TimerEnable(blTimerBase, TIMER_A);
 }
 
 void buttonSetBlink(uint32_t pattern)
@@ -72,22 +72,22 @@ void buttonSetBlink(uint32_t pattern)
 	switch (pattern)
 	{
 	case BLINK_OFF:
-		ROM_TimerDisable(blTimerBase, TIMER_A);
-		ROM_GPIOPinWrite(GPIO_PORTA_BASE, GPIO_PIN_2, 0);
+		TimerDisable(blTimerBase, TIMER_A);
+		GPIOPinWrite(GPIO_PORTA_BASE, GPIO_PIN_2, 0);
 		break;
 	case BLINK_ON:
-		ROM_TimerDisable(blTimerBase, TIMER_A);
-		ROM_GPIOPinWrite(GPIO_PORTA_BASE, GPIO_PIN_2, GPIO_PIN_2);
+		TimerDisable(blTimerBase, TIMER_A);
+		GPIOPinWrite(GPIO_PORTA_BASE, GPIO_PIN_2, GPIO_PIN_2);
 		break;
 	case BLINK_SOS:
-		ROM_TimerEnable(blTimerBase, TIMER_A);
-		ROM_GPIOPinWrite(GPIO_PORTA_BASE, GPIO_PIN_2, 0);
+		TimerEnable(blTimerBase, TIMER_A);
+		GPIOPinWrite(GPIO_PORTA_BASE, GPIO_PIN_2, 0);
 		blinkData = blinkSOS;
 		blinkStep = 0;
 		break;
 	case BLINK_STROBE:
-		ROM_TimerEnable(blTimerBase, TIMER_A);
-		ROM_GPIOPinWrite(GPIO_PORTA_BASE, GPIO_PIN_2, 0);
+		TimerEnable(blTimerBase, TIMER_A);
+		GPIOPinWrite(GPIO_PORTA_BASE, GPIO_PIN_2, 0);
 		blinkData = blinkStrobe;
 		blinkStep = 0;
 		break;
@@ -112,13 +112,13 @@ static void buttonIntHandler()
 	// Otherwise the transition will be accepted retroactively when
 	// transitions stop long enough for the debounce timer to expire.
 	btnLastInt = rtcMillis();
-	ROM_TimerEnable(dbTimerBase, TIMER_A);
-	ROM_TimerLoadSet(dbTimerBase, TIMER_A, dbTimerTicks);
+	TimerEnable(dbTimerBase, TIMER_A);
+	TimerLoadSet(dbTimerBase, TIMER_A, dbTimerTicks);
 }
 
 static void debounceCB()
 {
-	ROM_TimerIntClear(dbTimerBase, TIMER_TIMA_TIMEOUT);
+	TimerIntClear(dbTimerBase, TIMER_TIMA_TIMEOUT);
 
 	bool btnState = !!GPIOPinRead(GPIO_PORTA_BASE, GPIO_PIN_3);
 	if (btnState != btnLastState)
@@ -132,13 +132,13 @@ static void debounceCB()
 
 static void blinkCB()
 {
-	ROM_TimerIntClear(blTimerBase, TIMER_TIMA_TIMEOUT);
+	TimerIntClear(blTimerBase, TIMER_TIMA_TIMEOUT);
 
-	uint32_t state = ROM_GPIOPinRead(GPIO_PORTA_BASE, GPIO_PIN_2);
-	ROM_GPIOPinWrite(GPIO_PORTA_BASE, GPIO_PIN_2, state ^ GPIO_PIN_2);
+	uint32_t state = GPIOPinRead(GPIO_PORTA_BASE, GPIO_PIN_2);
+	GPIOPinWrite(GPIO_PORTA_BASE, GPIO_PIN_2, state ^ GPIO_PIN_2);
 
 	blinkStep++;
 	if (blinkStep > blinkData[0]) blinkStep = 1;
-    ROM_TimerLoadSet(blTimerBase, TIMER_A, blTimerTicks * blinkData[blinkStep]);
+    TimerLoadSet(blTimerBase, TIMER_A, blTimerTicks * blinkData[blinkStep]);
 }
 

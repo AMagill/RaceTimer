@@ -16,24 +16,24 @@ void xbInit(FrameCallback callback)
 	frameCB = callback;
 
 	// Enable hardware
-    ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_UART1);
-    ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOA);
-    ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOB);
+    SysCtlPeripheralEnable(SYSCTL_PERIPH_UART1);
+    SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOA);
+    SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOB);
 
     // XBee sleep pin (active high)
-	ROM_GPIOPinTypeGPIOOutput(GPIO_PORTA_BASE, GPIO_PIN_5);
+	GPIOPinTypeGPIOOutput(GPIO_PORTA_BASE, GPIO_PIN_5);
 	GPIOPinWrite(GPIO_PORTA_BASE, GPIO_PIN_2, GPIO_PIN_5);
 
 	// Configure UART
     GPIOPinConfigure(GPIO_PB0_U1RX);
     GPIOPinConfigure(GPIO_PB1_U1TX);
-    ROM_GPIOPinTypeUART(GPIO_PORTB_BASE, GPIO_PIN_0 | GPIO_PIN_1);
-    ROM_UARTConfigSetExpClk(UART1_BASE, ROM_SysCtlClockGet(), 57600,
+    GPIOPinTypeUART(GPIO_PORTB_BASE, GPIO_PIN_0 | GPIO_PIN_1);
+    UARTConfigSetExpClk(UART1_BASE, SysCtlClockGet(), 57600,
                             UART_CONFIG_WLEN_8 | UART_CONFIG_STOP_ONE | UART_CONFIG_PAR_NONE);
-    ROM_UARTFIFOEnable(UART1_BASE);
+    UARTFIFOEnable(UART1_BASE);
     IntRegister(INT_UART1, xbUARTIntHandler);
-    ROM_IntEnable(INT_UART1);
-    ROM_UARTIntEnable(UART1_BASE, UART_INT_RX | UART_INT_RT | UART_INT_TX);
+    IntEnable(INT_UART1);
+    UARTIntEnable(UART1_BASE, UART_INT_RX | UART_INT_RT | UART_INT_TX);
 }
 
 void xbSleep(bool sleep)
@@ -47,7 +47,7 @@ void xbSleep(bool sleep)
 	else
 	{
 		GPIOPinWrite(GPIO_PORTA_BASE, GPIO_PIN_5, 0);
-		ROM_SysCtlDelay(ROM_SysCtlClockGet()*3/(3*1000));	// Wait for wake ~3ms
+		delayMs(3);	// Wait for wake ~3ms
 	}
 	sleeping = sleep;
 }
@@ -58,15 +58,15 @@ void xbUARTIntHandler()
     static uint8_t  rxChecksum = 0;
 
     // Get and clear the interrupt status.
-	uint32_t status = ROM_UARTIntStatus(UART1_BASE, true);
-    ROM_UARTIntClear(UART1_BASE, status);
+	uint32_t status = UARTIntStatus(UART1_BASE, true);
+    UARTIntClear(UART1_BASE, status);
 
     // Loop while there are characters in the receive FIFO.
     if (status & (UART_INT_RX | UART_INT_RT))
     {
-		while(ROM_UARTCharsAvail(UART1_BASE))
+		while(UARTCharsAvail(UART1_BASE))
 		{
-			uint8_t inCh = ROM_UARTCharGetNonBlocking(UART1_BASE);
+			uint8_t inCh = UARTCharGetNonBlocking(UART1_BASE);
 			if (rxBytes == 0)					// Start delimiter
 			{
 				if (inCh == 0x7E)
@@ -108,8 +108,8 @@ void xbUARTIntHandler()
 
     if (status & UART_INT_TX)
     {
-    	while (!rbIsEmpty(txBuf) && ROM_UARTSpaceAvail(UART1_BASE))
-    		ROM_UARTCharPut(UART1_BASE, rbRead(txBuf));
+    	while (!rbIsEmpty(txBuf) && UARTSpaceAvail(UART1_BASE))
+    		UARTCharPut(UART1_BASE, rbRead(txBuf));
 
     	// If we're out of bytes to send, put the XBee to sleep
     	if (rbIsEmpty(txBuf))
@@ -125,8 +125,8 @@ void xbUARTSend(const uint8_t *buffer, uint32_t count)
     while(count--)
     {
     	// Send now, if nothing else is waiting.  Otherwise buffer it.
-    	if (rbIsEmpty(txBuf) && ROM_UARTSpaceAvail(UART1_BASE))
-    		ROM_UARTCharPut(UART1_BASE, *buffer++);
+    	if (rbIsEmpty(txBuf) && UARTSpaceAvail(UART1_BASE))
+    		UARTCharPut(UART1_BASE, *buffer++);
     	else
     		rbWrite(txBuf, *buffer++);
     }

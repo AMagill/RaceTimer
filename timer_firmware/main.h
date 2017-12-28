@@ -1,5 +1,4 @@
-#ifndef MAIN_H_
-#define MAIN_H_
+#pragma once
 
 #include <stdlib.h>
 #include <stdint.h>
@@ -34,4 +33,4 @@ extern Timer* rtc;
 void gpioBlinkLEDs(uint8_t which);
 uint8_t gpioGetButtons();
 
-#endif /* MAIN_H_ */
+void delayMs(uint32_t ms);

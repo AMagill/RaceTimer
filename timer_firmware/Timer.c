@@ -5,16 +5,16 @@
 
 void rtcInit()
 {
-    ROM_SysCtlPeripheralEnable(SYSCTL_PERIPH_WTIMER0);
-    ROM_TimerConfigure(WTIMER0_BASE, TIMER_CFG_SPLIT_PAIR | TIMER_CFG_A_PERIODIC);
-    ROM_TimerPrescaleSet(WTIMER0_BASE, TIMER_A, ROM_SysCtlClockGet()/1000);
-    //ROM_TimerLoadSet(TIMER0_BASE, TIMER_A, 0xFFFFFFFF);
-    ROM_TimerEnable(WTIMER0_BASE, TIMER_A);
+    SysCtlPeripheralEnable(SYSCTL_PERIPH_WTIMER0);
+    TimerConfigure(WTIMER0_BASE, TIMER_CFG_SPLIT_PAIR | TIMER_CFG_A_PERIODIC);
+    TimerPrescaleSet(WTIMER0_BASE, TIMER_A, SysCtlClockGet()/1000);
+    //TimerLoadSet(TIMER0_BASE, TIMER_A, 0xFFFFFFFF);
+    TimerEnable(WTIMER0_BASE, TIMER_A);
 }
 
 uint32_t rtcMillis()
 {
-	return 0xFFFFFFFF - ROM_TimerValueGet(WTIMER0_BASE, TIMER_A);
+	return 0xFFFFFFFF - TimerValueGet(WTIMER0_BASE, TIMER_A);
 }
 
 int32_t rtcSub(uint32_t t1, uint32_t t2)
@@ -30,30 +30,30 @@ Timer* timerInit(uint32_t base, float period, void (*callback)(void))
 	Timer *this = malloc(sizeof(Timer));
 	this->base 			= base;
 	this->timer 		= TIMER_BOTH;
-	this->periodTicks 	= period * ROM_SysCtlClockGet();
+	this->periodTicks 	= period * SysCtlClockGet();
 
-    //ROM_SysCtlPeripheralEnable(allPeriphs[iBase]);
-    ROM_TimerConfigure(this->base, TIMER_CFG_PERIODIC);
-    ROM_TimerLoadSet(this->base, this->timer, this->periodTicks);
+    //SysCtlPeripheralEnable(allPeriphs[iBase]);
+    TimerConfigure(this->base, TIMER_CFG_PERIODIC);
+    TimerLoadSet(this->base, this->timer, this->periodTicks);
     TimerIntRegister(this->base, this->timer, callback);
-    ROM_TimerIntEnable(this->base, (this->base==TIMER_B)?TIMER_TIMB_TIMEOUT:TIMER_TIMA_TIMEOUT);
-    ROM_TimerEnable(this->base, this->timer);
+    TimerIntEnable(this->base, (this->base==TIMER_B)?TIMER_TIMB_TIMEOUT:TIMER_TIMA_TIMEOUT);
+    TimerEnable(this->base, this->timer);
 
     return this;
 }
 
 void timerStart(Timer *this)
 {
-    ROM_TimerEnable(this->base, this->timer);
+    TimerEnable(this->base, this->timer);
 }
 
 void timerStop(Timer *this)
 {
-	ROM_TimerDisable(this->base, this->timer);
+	TimerDisable(this->base, this->timer);
 }
 
 void timerRestart(Timer *this)
 {
-	ROM_TimerEnable(this->base, this->timer);
-	ROM_TimerLoadSet(this->base, this->timer, this->periodTicks);
+	TimerEnable(this->base, this->timer);
+	TimerLoadSet(this->base, this->timer, this->periodTicks);
 }

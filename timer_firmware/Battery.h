@@ -1,10 +1,7 @@
-#ifndef BATTERY_H_
-#define BATTERY_H_
+#pragma once
 
 void batteryInit();
 void batteryInit();
 void batterySampleTrigger();
 uint16_t batteryGetLevel();
-
-
-#endif /* BATTERY_H_ */
+uint8_t batteryGetPercent();

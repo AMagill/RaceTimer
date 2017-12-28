@@ -3,8 +3,8 @@
 
 static uint16_t frameBuf[8] = {0, 0, 0, 0, 0, 0, 0, 0};
 
-static void displaySendArray(uint8_t addr, uint8_t cmd, const uint8_t* msg, uint16_t length);
-static void displaySendSingle(uint8_t addr, uint8_t msg);
+static bool displaySendArray(uint8_t addr, uint8_t cmd, const uint8_t* msg, uint16_t length);
+static bool displaySendSingle(uint8_t addr, uint8_t msg);
 
 static const uint8_t DISP_L_ADDR = 0x70;
 static const uint8_t DISP_R_ADDR = 0x71;
@@ -75,7 +75,7 @@ static const uint16_t fontTable[] =
     0b0001001011000000, // +
     0b0000100000000000, // ,
     0b0000000011000000, // -
-    0b0000000000000000, // .
+    0b0100000000000000, // .
     0b0000110000000000, // /
     0b0000110000111111, // 0
     0b0000000000000110, // 1
@@ -166,6 +166,8 @@ void displayInit()
     // Enable hardware
     SysCtlPeripheralEnable(SYSCTL_PERIPH_I2C2);
     SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOE);
+    while(!SysCtlPeripheralReady(SYSCTL_PERIPH_I2C2));
+    while(!SysCtlPeripheralReady(SYSCTL_PERIPH_GPIOE));
 
     GPIOPinConfigure(GPIO_PE4_I2C2SCL);
     GPIOPinConfigure(GPIO_PE5_I2C2SDA);
@@ -174,6 +176,7 @@ void displayInit()
     GPIOPinTypeI2C(GPIO_PORTE_BASE,    GPIO_PIN_5);
 
     I2CMasterInitExpClk(I2C2_BASE, SysCtlClockGet(), false);
+    I2CMasterGlitchFilterConfigSet(I2C2_BASE, I2C_MASTER_GLITCH_FILTER_32);
 
     displaySendSingle(DISP_L_ADDR, 0x21);  // Enable oscillators
     displaySendSingle(DISP_R_ADDR, 0x21);
@@ -205,6 +208,39 @@ void displaySetChar(uint8_t index, uint8_t ch)
         frameBuf[index] = fontTable[ch];
 }
 
+void displaySetNumber(uint8_t index, uint8_t num)
+{
+    index += 2;    // Expects 3 digits of space
+    if (index < 8)
+    {
+        do
+        {
+            displaySetChar(index--, num%10+'0');  // Work backwards
+            num /= 10;
+        } while (num != 0);
+    }
+}
+
+void displaySetTime(uint32_t timeMs)
+{
+    uint32_t min = timeMs / 60000;
+    timeMs -= min * 60000;
+
+    timeMs /= 10;
+    frameBuf[7] = fontTable[timeMs%10+'0'];
+    timeMs /= 10;
+    frameBuf[6] = fontTable[timeMs%10+'0'];
+    timeMs /= 10;
+    frameBuf[5] = fontTable[timeMs%10+'0'] | fontTable['.'];  // s
+    timeMs /= 10;
+    frameBuf[4] = fontTable[timeMs%10+'0'];
+    frameBuf[3] = (min > 0) ? (fontTable[min%10+'0'] | fontTable['.']) : fontTable[' '];
+    min /= 10;
+    frameBuf[2] = (min > 0) ? fontTable[min%10+'0'] : fontTable[' '];
+    frameBuf[1] = fontTable[' '];
+    frameBuf[0] = fontTable[' '];
+}
+
 void displayUpdate()
 {
     displaySendArray(DISP_L_ADDR, 0x00, (uint8_t*)frameBuf,   8);
@@ -234,15 +270,17 @@ void displayScrollText(const char* text, uint32_t delayMs)
 
 
 
-static void displaySendSingle(uint8_t addr, uint8_t cmd)
+static bool displaySendSingle(uint8_t addr, uint8_t cmd)
 {
     I2CMasterSlaveAddrSet(I2C2_BASE, addr, false);
     I2CMasterDataPut(I2C2_BASE, cmd);
     I2CMasterControl(I2C2_BASE, I2C_MASTER_CMD_SINGLE_SEND);
+    SysCtlDelay(100);  // Avoid occasional glitch where the next line passes before transmission
     while(I2CMasterBusy(I2C2_BASE));
+    return I2CMasterErr(I2C2_BASE) == I2C_MASTER_ERR_NONE;
 }
 
-static void displaySendArray(uint8_t addr, uint8_t cmd, const uint8_t* data, uint16_t length)
+static bool displaySendArray(uint8_t addr, uint8_t cmd, const uint8_t* data, uint16_t length)
 {
     if (length == 0)
         return displaySendSingle(addr, cmd);
@@ -250,19 +288,39 @@ static void displaySendArray(uint8_t addr, uint8_t cmd, const uint8_t* data, uin
     I2CMasterSlaveAddrSet(I2C2_BASE, addr, false);
     I2CMasterDataPut(I2C2_BASE, cmd);
     I2CMasterControl(I2C2_BASE, I2C_MASTER_CMD_BURST_SEND_START);
+    SysCtlDelay(100);  // Avoid occasional glitch where the next line passes before transmission
     while(I2CMasterBusy(I2C2_BASE));
+    if (I2CMasterErr(I2C2_BASE) != I2C_MASTER_ERR_NONE)
+    {
+        I2CMasterControl(I2C2_BASE, I2C_MASTER_CMD_BURST_SEND_ERROR_STOP);
+        return false;
+    }
 
     int i;
     for (i = 0; i < length-1; i++)
     {
         I2CMasterDataPut(I2C2_BASE, data[i]);
         I2CMasterControl(I2C2_BASE, I2C_MASTER_CMD_BURST_SEND_CONT);
+        SysCtlDelay(100);  // Avoid occasional glitch where the next line passes before transmission
         while(I2CMasterBusy(I2C2_BASE));
+        if (I2CMasterErr(I2C2_BASE) != I2C_MASTER_ERR_NONE)
+        {
+            I2CMasterControl(I2C2_BASE, I2C_MASTER_CMD_BURST_SEND_ERROR_STOP);
+            return false;
+        }
     }
 
     I2CMasterDataPut(I2C2_BASE, data[i]);
     I2CMasterControl(I2C2_BASE, I2C_MASTER_CMD_BURST_SEND_FINISH);
+    SysCtlDelay(100);  // Avoid occasional glitch where the next line passes before transmission
     while(I2CMasterBusy(I2C2_BASE));
+    if (I2CMasterErr(I2C2_BASE) != I2C_MASTER_ERR_NONE)
+    {
+        I2CMasterControl(I2C2_BASE, I2C_MASTER_CMD_BURST_SEND_ERROR_STOP);
+        return false;
+    }
+
+    return true;
 }
 
 
