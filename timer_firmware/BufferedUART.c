@@ -3,7 +3,7 @@
 #include "RingBuffer.h"
 #include <stdio.h>
 
-#define BUF_SIZE 64
+#define BUF_SIZE 256
 static RingBuffer *rxBuf, *txBuf;
 
 // Uses UART0: Rx PA0 + Tx PA1

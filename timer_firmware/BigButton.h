@@ -9,6 +9,6 @@
 typedef void (*ButtonCallback)(bool pressed, uint32_t time);
 
 void buttonInit(ButtonCallback btnCB);
-void buttonSetBlink(uint32_t pattern);
+void buttonSetLed(bool ledOn);
 
 #endif /* BIGBUTTON_H_ */

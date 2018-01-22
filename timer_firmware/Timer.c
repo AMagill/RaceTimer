@@ -37,7 +37,7 @@ Timer* timerInit(uint32_t base, float period, void (*callback)(void))
     TimerLoadSet(this->base, this->timer, this->periodTicks);
     TimerIntRegister(this->base, this->timer, callback);
     TimerIntEnable(this->base, (this->base==TIMER_B)?TIMER_TIMB_TIMEOUT:TIMER_TIMA_TIMEOUT);
-    TimerEnable(this->base, this->timer);
+    //TimerEnable(this->base, this->timer);
 
     return this;
 }

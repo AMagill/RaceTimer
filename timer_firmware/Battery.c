@@ -4,8 +4,8 @@
 static uint16_t batteryLevel;
 
 static const uint32_t SEQ = 0;
-static const uint16_t battMax = 3000;  // 3000 = 5V
-static const uint16_t battMin = 2000;  // 2000 = 3V
+static const uint16_t BATT_MAX = 2750;  // ~5V
+static const uint16_t BATT_MIN = 1770;  // ~3.3V
 
 void batteryADCIntHandler()
 {
@@ -29,7 +29,6 @@ void batteryInit()
 	GPIOPinTypeADC(GPIO_PORTD_BASE, GPIO_PIN_0);
 
 	ADCHardwareOversampleConfigure(ADC0_BASE, 64);
-
 	ADCSequenceDisable(ADC0_BASE, SEQ);
 	ADCSequenceConfigure(ADC0_BASE, SEQ, ADC_TRIGGER_PROCESSOR, 0);
 	ADCSequenceStepConfigure(ADC0_BASE, SEQ, 0, ADC_CTL_CH7 | ADC_CTL_IE | ADC_CTL_END);
@@ -51,9 +50,9 @@ uint16_t batteryGetLevel()
 
 uint8_t batteryGetPercent()
 {
-    if (batteryLevel < battMin)
+    if (batteryLevel < BATT_MIN)
         return 0;
-    if (batteryLevel > battMax)
+    if (batteryLevel > BATT_MAX)
         return 100;
-    return (int32_t)(batteryLevel - battMin) * 100 / (battMax - battMin);
+    return (int32_t)(batteryLevel - BATT_MIN) * 100 / (BATT_MAX - BATT_MIN);
 }

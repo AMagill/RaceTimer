@@ -1,30 +1,16 @@
-#ifndef PROTOCOL_H_
-#define PROTOCOL_H_
-
-#define EVT_BTN_DOWN 'd'
-#define EVT_BTN_UP   'u'
+#pragma once
 
 typedef struct __attribute__((packed)) {
-	char      type;
-	uint32_t  time;		// microseconds
-	uint16_t   battery;
-} heartbeatMsg;
+    char      type;
+    uint8_t   running : 1;
+    uint8_t   btnDown : 1;
+    uint8_t   _unused : 6;
+    uint32_t  rtcTime;     // milliseconds
+    uint32_t  timerValue;  // milliseconds
+} stateMsg;
 
-typedef struct __attribute__((packed)) {
-	char      type;
-} pingMsg;
+typedef void (*RxStateCallback)(const stateMsg* msg);
 
-typedef struct __attribute__((packed)) {
-	char      type;
-	uint32_t  eventTime;
-	char      eventType;
-} eventMsg;
-
-
+void pcInit(RxStateCallback rxStateCB);
 void pcFrameReceived(uint8_t *frame, uint32_t size);
-void pcSendHeartbeat();
-void pcSendEvent(uint32_t eventTime, char eventType);
-uint32_t pcLastHeard();
-
-
-#endif /* PROTOCOL_H_ */
+void pcSendState(uint64_t addr, bool isRunning, bool isButtonDown, uint32_t rtcTime, uint32_t timerValue);

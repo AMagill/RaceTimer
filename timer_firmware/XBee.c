@@ -6,7 +6,6 @@
 static uint8_t rxBuf[BUF_SIZE];
 static RingBuffer *txBuf;
 static FrameCallback frameCB = NULL;
-static bool sleeping = true;
 
 // Uses UART1: Rx PB0 + Tx PB1
 void xbInit(FrameCallback callback)
@@ -17,12 +16,7 @@ void xbInit(FrameCallback callback)
 
 	// Enable hardware
     SysCtlPeripheralEnable(SYSCTL_PERIPH_UART1);
-    SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOA);
     SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOB);
-
-    // XBee sleep pin (active high)
-	GPIOPinTypeGPIOOutput(GPIO_PORTA_BASE, GPIO_PIN_5);
-	GPIOPinWrite(GPIO_PORTA_BASE, GPIO_PIN_2, GPIO_PIN_5);
 
 	// Configure UART
     GPIOPinConfigure(GPIO_PB0_U1RX);
@@ -34,22 +28,6 @@ void xbInit(FrameCallback callback)
     IntRegister(INT_UART1, xbUARTIntHandler);
     IntEnable(INT_UART1);
     UARTIntEnable(UART1_BASE, UART_INT_RX | UART_INT_RT | UART_INT_TX);
-}
-
-void xbSleep(bool sleep)
-{
-	if (sleeping == sleep) return;	// Nothing to do.
-
-	if (sleep)
-	{
-		GPIOPinWrite(GPIO_PORTA_BASE, GPIO_PIN_5, GPIO_PIN_5);
-	}
-	else
-	{
-		GPIOPinWrite(GPIO_PORTA_BASE, GPIO_PIN_5, 0);
-		delayMs(3);	// Wait for wake ~3ms
-	}
-	sleeping = sleep;
 }
 
 void xbUARTIntHandler()
@@ -110,17 +88,11 @@ void xbUARTIntHandler()
     {
     	while (!rbIsEmpty(txBuf) && UARTSpaceAvail(UART1_BASE))
     		UARTCharPut(UART1_BASE, rbRead(txBuf));
-
-    	// If we're out of bytes to send, put the XBee to sleep
-    	if (rbIsEmpty(txBuf))
-    		xbSleep(true);
     }
 }
 
 void xbUARTSend(const uint8_t *buffer, uint32_t count)
 {
-	xbSleep(false);	// Wake up!
-
     // Loop while there are more characters to send.
     while(count--)
     {
@@ -147,13 +119,45 @@ void xbSendFrameTx16(uint16_t address, uint8_t opts, const uint8_t *msg, uint16_
 	// Checksum
 	int i;
 	uint8_t checksum = 0;
-	for (i = 3; i < 8; i++)
+	for (i = 3; i < sizeof(frame); i++)
 		checksum += frame[i];
 	for (i = 0; i < length; i++)
 		checksum += msg[i];
 	checksum = 0xFF - checksum;
 
-	xbUARTSend(frame, 8);
+	xbUARTSend(frame, sizeof(frame));
 	xbUARTSend(msg, length);
 	xbUARTSend(&checksum, 1);
+}
+
+void xbSendFrameTx64(uint64_t address, uint8_t opts, const uint8_t *msg, uint16_t length)
+{
+    uint8_t frame[14];
+    frame[ 0] = 0x7E;                    // Start delimiter
+    frame[ 1] = (length + 11) >> 8;      // Length MSB
+    frame[ 2] = (length + 11) & 0xFF;    // Length LSB
+    frame[ 3] = 0x00;                    // Frame type: TX w/ 64-bit address
+    frame[ 4] = !opts;                   // Frame ID - don't request response if NO_ACK
+    frame[ 5] = (address >> 56);         // Address MSB
+    frame[ 6] = (address >> 48) & 0xFF;  // Address
+    frame[ 7] = (address >> 40) & 0xFF;  // Address
+    frame[ 8] = (address >> 32) & 0xFF;  // Address
+    frame[ 9] = (address >> 24) & 0xFF;  // Address
+    frame[10] = (address >> 16) & 0xFF;  // Address
+    frame[11] = (address >> 8 ) & 0xFF;  // Address
+    frame[12] = (address      ) & 0xFF;  // Address LSB
+    frame[13] = opts;                    // Options
+
+    // Checksum
+    int i;
+    uint8_t checksum = 0;
+    for (i = 3; i < sizeof(frame); i++)
+        checksum += frame[i];
+    for (i = 0; i < length; i++)
+        checksum += msg[i];
+    checksum = 0xFF - checksum;
+
+    xbUARTSend(frame, sizeof(frame));
+    xbUARTSend(msg, length);
+    xbUARTSend(&checksum, 1);
 }

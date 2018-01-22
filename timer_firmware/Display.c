@@ -1,10 +1,17 @@
 #include "main.h"
 #include "Display.h"
+#include "RingBuffer.h"
 
+#define BUF_SIZE 256
+static RingBuffer *txBuf;
+static int txCurSize = 0;
+static int txCurPos  = 0;
+static bool txLoopOn = false;
 static uint16_t frameBuf[8] = {0, 0, 0, 0, 0, 0, 0, 0};
 
 static bool displaySendArray(uint8_t addr, uint8_t cmd, const uint8_t* msg, uint16_t length);
 static bool displaySendSingle(uint8_t addr, uint8_t msg);
+static void displayIntHandler();
 
 static const uint8_t DISP_L_ADDR = 0x70;
 static const uint8_t DISP_R_ADDR = 0x71;
@@ -163,6 +170,8 @@ static const uint16_t fontTable[] =
 // Uses I2C2: clock PE4 + data PE5
 void displayInit()
 {
+	txBuf = rbInit(BUF_SIZE);
+
     // Enable hardware
     SysCtlPeripheralEnable(SYSCTL_PERIPH_I2C2);
     SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOE);
@@ -175,8 +184,11 @@ void displayInit()
     GPIOPinTypeI2CSCL(GPIO_PORTE_BASE, GPIO_PIN_4);
     GPIOPinTypeI2C(GPIO_PORTE_BASE,    GPIO_PIN_5);
 
-    I2CMasterInitExpClk(I2C2_BASE, SysCtlClockGet(), false);
+    I2CMasterInitExpClk(I2C2_BASE, SysCtlClockGet(), true);
     I2CMasterGlitchFilterConfigSet(I2C2_BASE, I2C_MASTER_GLITCH_FILTER_32);
+
+    I2CIntRegister(I2C2_BASE, displayIntHandler);
+    I2CMasterIntEnable(I2C2_BASE);
 
     displaySendSingle(DISP_L_ADDR, 0x21);  // Enable oscillators
     displaySendSingle(DISP_R_ADDR, 0x21);
@@ -185,6 +197,89 @@ void displayInit()
 
     displaySendSingle(DISP_L_ADDR, 0x81);  // Displays on, no blink
     displaySendSingle(DISP_R_ADDR, 0x81);
+}
+
+static void displayTxByte()
+{
+	if (txCurSize == 0)
+	{
+		if (rbIsEmpty(txBuf))
+		{
+			txLoopOn = false;
+			return;  // Nothing to send!
+		}
+
+		txLoopOn  = true;
+		txCurSize = rbRead(txBuf);
+		txCurPos  = 0;
+	}
+
+	if (txCurSize == 1)
+	{  // Single byte send
+		uint8_t addr = rbRead(txBuf);
+		uint8_t data = rbRead(txBuf);
+
+	    I2CMasterSlaveAddrSet(I2C2_BASE, addr, false);
+	    I2CMasterDataPut(I2C2_BASE, data);
+	    I2CMasterControl(I2C2_BASE, I2C_MASTER_CMD_SINGLE_SEND);
+	}
+	else
+	{  // Multi-byte send
+		if (txCurPos == 0)  // First byte
+		{
+			uint8_t addr = rbRead(txBuf);
+			uint8_t data = rbRead(txBuf);
+
+		    I2CMasterSlaveAddrSet(I2C2_BASE, addr, false);
+		    I2CMasterDataPut(I2C2_BASE, data);
+		    I2CMasterControl(I2C2_BASE, I2C_MASTER_CMD_BURST_SEND_START);
+		}
+		else
+		{
+			if (I2CMasterErr(I2C2_BASE) != I2C_MASTER_ERR_NONE)
+			{   // There was an error, abort the message
+				// Discard the rest of the buffered message
+				for (; txCurPos < txCurSize; txCurPos++)
+					rbRead(txBuf);
+				txCurSize = 0;
+				I2CMasterControl(I2C2_BASE, I2C_MASTER_CMD_BURST_SEND_ERROR_STOP);
+			}
+			else
+			{
+				if (txCurPos < txCurSize - 1) // Middle byte
+				{
+					uint8_t data = rbRead(txBuf);
+
+					I2CMasterDataPut(I2C2_BASE, data);
+					I2CMasterControl(I2C2_BASE, I2C_MASTER_CMD_BURST_SEND_CONT);
+				}
+				else // Last byte
+				{
+					uint8_t data = rbRead(txBuf);
+
+					I2CMasterDataPut(I2C2_BASE, data);
+					I2CMasterControl(I2C2_BASE, I2C_MASTER_CMD_BURST_SEND_FINISH);
+				}
+			}
+
+		}
+	}
+
+    txCurPos++;
+    if (txCurPos == txCurSize)
+    	txCurSize = 0;
+}
+
+static void displayIntHandler()
+{
+    // Get and clear the interrupt status.
+	uint32_t status = I2CMasterIntStatus(I2C2_BASE, true);
+	I2CMasterIntClear(I2C2_BASE);
+
+	if (status & I2C_MASTER_INT_DATA)
+	{
+		displayTxByte();
+	}
 }
 
 void displaySetText(const char* text)
@@ -268,59 +363,27 @@ void displayScrollText(const char* text, uint32_t delayMs)
     } while (!done);
 }
 
-
-
 static bool displaySendSingle(uint8_t addr, uint8_t cmd)
 {
-    I2CMasterSlaveAddrSet(I2C2_BASE, addr, false);
-    I2CMasterDataPut(I2C2_BASE, cmd);
-    I2CMasterControl(I2C2_BASE, I2C_MASTER_CMD_SINGLE_SEND);
-    SysCtlDelay(100);  // Avoid occasional glitch where the next line passes before transmission
-    while(I2CMasterBusy(I2C2_BASE));
-    return I2CMasterErr(I2C2_BASE) == I2C_MASTER_ERR_NONE;
+	rbWrite(txBuf, 1);  // 1 byte message
+	rbWrite(txBuf, addr);
+	rbWrite(txBuf, cmd);
+	if (!txLoopOn)
+		displayTxByte();
+	return true;
 }
 
 static bool displaySendArray(uint8_t addr, uint8_t cmd, const uint8_t* data, uint16_t length)
 {
-    if (length == 0)
-        return displaySendSingle(addr, cmd);
-
-    I2CMasterSlaveAddrSet(I2C2_BASE, addr, false);
-    I2CMasterDataPut(I2C2_BASE, cmd);
-    I2CMasterControl(I2C2_BASE, I2C_MASTER_CMD_BURST_SEND_START);
-    SysCtlDelay(100);  // Avoid occasional glitch where the next line passes before transmission
-    while(I2CMasterBusy(I2C2_BASE));
-    if (I2CMasterErr(I2C2_BASE) != I2C_MASTER_ERR_NONE)
-    {
-        I2CMasterControl(I2C2_BASE, I2C_MASTER_CMD_BURST_SEND_ERROR_STOP);
-        return false;
-    }
-
-    int i;
-    for (i = 0; i < length-1; i++)
-    {
-        I2CMasterDataPut(I2C2_BASE, data[i]);
-        I2CMasterControl(I2C2_BASE, I2C_MASTER_CMD_BURST_SEND_CONT);
-        SysCtlDelay(100);  // Avoid occasional glitch where the next line passes before transmission
-        while(I2CMasterBusy(I2C2_BASE));
-        if (I2CMasterErr(I2C2_BASE) != I2C_MASTER_ERR_NONE)
-        {
-            I2CMasterControl(I2C2_BASE, I2C_MASTER_CMD_BURST_SEND_ERROR_STOP);
-            return false;
-        }
-    }
-
-    I2CMasterDataPut(I2C2_BASE, data[i]);
-    I2CMasterControl(I2C2_BASE, I2C_MASTER_CMD_BURST_SEND_FINISH);
-    SysCtlDelay(100);  // Avoid occasional glitch where the next line passes before transmission
-    while(I2CMasterBusy(I2C2_BASE));
-    if (I2CMasterErr(I2C2_BASE) != I2C_MASTER_ERR_NONE)
-    {
-        I2CMasterControl(I2C2_BASE, I2C_MASTER_CMD_BURST_SEND_ERROR_STOP);
-        return false;
-    }
-
-    return true;
+	rbWrite(txBuf, 1+length);
+	rbWrite(txBuf, addr);
+	rbWrite(txBuf, cmd);
+	int i;
+	for (i = 0; i < length; i++)
+		rbWrite(txBuf, data[i]);
+	if (!txLoopOn)
+		displayTxByte();
+	return true;
 }
 
 
